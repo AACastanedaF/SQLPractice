@@ -1,0 +1,183 @@
+---
+title: "Tarea Base de Datos"
+author: "Angel Adrián Castañeda Flores"
+date: "17/11/2021"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\newpage
+## Cargar Información
+
+Para este trabajo se utilizan las librerias _DBI_ y _RSQLite_, a continuación se muestra como se carga la información. La base de datos a utilizar se llama _Northwind.sqlite_.
+
+```{r cargarSQL, echo = TRUE, warning=FALSE}
+#Instalar librerias requeridas en caso de que no se tengan
+#Descomentar los siguientes 3 renglones si no se cuenta con las librerias
+#if(!require(DBI)) install.packages("DBI")
+#if(!require(RSQLite)) install.packages("RSQLite")
+#if(!require(ggplot2)) install.packages("ggplot2")
+#Cargar librerias a utilizar
+library(RSQLite)
+library(DBI)
+library(ggplot2)
+#Cargar base de datos
+Northwind <- dbConnect(RSQLite::SQLite(), "Northwind.sqlite")
+```
+\newpage
+## Ejercicio 1
+
+**Obtenga el nombre de los productos y unidades en Stock de los productos que se encuentran descontinuados.** 
+**Muestre los primeros 5 registros ordenados de mayor a menor por Stock.**
+
+```{r consulta1, echo=TRUE}
+dbGetQuery(Northwind, 
+           'SELECT ProductName As Nombre_Producto, UnitsInStock As Unidades_Stock
+            FROM Product
+            WHERE Discontinued = 1
+            Order BY UnitsInStock DESC
+            LIMIT 5')
+```
+
+## Ejercicio 2
+
+**Calcule el total de ventas donde la venta es igual a: (Precio Unitario-Descuento)*Cantidad**
+A partir de este ejercicio se consideran dos casos. Por un lado, el primero considera la formula **(Precio Unitario-Descuento)*Cantidad** donde el descuento se resta directamente al precio del producto. Por otro lado, la formula **(Precio Unitario-(Descuento*Precio Unitario))*Cantidad**, considera que el descuento es un porcentaje y este se debe multiplicar al precio unitario para después restarselo al precio unitario.
+
+_Caso 1: **(Precio Unitario-Descuento)*Cantidad**_
+
+```{r consulta2a, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT sum((UnitPrice-Discount)*Quantity) As Total_Ventas
+            FROM OrderDetail')
+```
+
+_Caso 2: **(Precio Unitario-(Descuento*Precio Unitario))*Cantidad**_
+
+```{r consulta2b, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT sum((UnitPrice-(UnitPrice*Discount))*Quantity) As Total_Ventas
+            FROM OrderDetail')
+```
+\newpage
+
+## Ejercicio 3
+
+**Muestre el total de ventas por país de origen del cliente.**
+En este ejercicio se relacionaron tres tablas, la primera fue _Customer_ ,la segunda fue _Order_ y la tercera _OrderDetail_.
+De la tabla _Customer_ se tomó _Country_ y de _OrderDetail_ se tomó _UnitPrice, Quantity y Discount_.
+La tabla _Order_ funcionó como mediadora entre _Customer_ y _OrderDetail_.
+Para este ejercicio, nuevamente se considerarón dos casos como en el anterior.
+
+_Caso 1: **(Precio Unitario-Descuento)*Cantidad**_
+
+```{r consulta3a, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT Country As Pais, sum((UnitPrice-Discount)*Quantity) As Total_Ventas
+            FROM Customer
+            INNER JOIN "Order"
+            ON "Order".CustomerId = Customer.Id
+            INNER JOIN OrderDetail
+            ON OrderDetail.OrderId = "Order".Id
+            group By Country')
+```
+
+_Caso 2: **(Precio Unitario-(Descuento*Precio Unitario))*Cantidad**_
+
+```{r consulta3b, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT Country As Pais, sum((UnitPrice-(UnitPrice*Discount))*Quantity) As Total_Ventas
+            FROM Customer
+            INNER JOIN "Order"
+            ON "Order".CustomerId = Customer.Id
+            INNER JOIN OrderDetail
+            ON OrderDetail.OrderId = "Order".Id
+            group By Country')
+```
+\newpage
+
+## Ejercicio 4
+
+**Calcule el total de descuento por categoría de producto y ordénelo de manera descendente.**
+Para este ejercicio se relacionan dos tablas, _OrderDetail_ y _Product_. De la primera se toma _Discount_ y _UnitPrice_, mientras que de la segunda se toma _CategodyID_.
+Ambas tablas se relacionan mediante _ProductId_.
+
+Nuevamente en este ejercicio se consideró en cuenta dos casos. El primero donde se sumaban todos los descuentos de una categoria y se sumaban. Y un segundo caso, donde los descuentos se consideran porcentajes, se multiplica por el descuento unitario y se suma el resultado.
+
+_Caso 1: Se sumas los descuentos_
+
+```{r consulta4a, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT CategoryId As Id_Categoria, sum(Discount) As Descuento_Total
+            FROM OrderDetail
+            INNER JOIN Product
+            ON Product.Id = OrderDetail.ProductId
+            GROUP BY CategoryId')
+```
+
+_Caso 2: El descuento se multiplica por el precio unitario y se suma_
+
+```{r consulta4b, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT CategoryId As Id_Categoria, sum(Discount*Product.UnitPrice) As Descuento_Total
+            FROM OrderDetail
+            INNER JOIN Product
+            ON Product.Id = OrderDetail.ProductId
+            GROUP BY CategoryId')
+```
+
+\newpage
+
+## Ejercicio 5
+
+**Los proveedores de España solicitan conocer la demanda de sus productos a través de los meses.**
+**La información que se compartirá corresponde a la cantidad de producto vendido de acuerdo a su fecha de pedido.** 
+**Muestre la información de manera gráfica.**
+En este ejercicio se relacionan cuatro tablas, _Supplier_ donde se obtiene el país del vendedor, _Product_ donde se obtiene el nombre del producto, _OrderDetail_ con la cual se puede vincular la tabla _Order_ y finalmente _Order_ de donde se obtiene la fecha de orden del producto.
+
+Primero se muestran los resultados generados con la consulta, posteriormente se muestra la gráfica solicitada.
+
+```{r consulta5a, echo=TRUE}
+dbGetQuery(Northwind,
+           'SELECT strftime("%Y-%m",OrderDate) As Fecha, ProductName As Nombre_Producto, 
+            sum(Quantity) As Cantidad
+            FROM Supplier
+            INNER JOIN Product
+            ON Product.SupplierId = Supplier.Id
+            INNER JOIN OrderDetail
+            ON OrderDetail.ProductId = Product.Id
+            INNER JOIN "Order"
+            ON "Order".Id = OrderDetail.OrderId
+            Where Supplier.Country = "Spain"
+            GROUP BY Fecha, ProductName')
+```
+
+```{r consulta5b, echo=TRUE}
+#Se almacena la información de la consulta en una variable
+ej5<-dbGetQuery(Northwind,
+           'SELECT strftime("%Y-%m",OrderDate) As Fecha, ProductName As Nombre_Producto, 
+            sum(Quantity) As Cantidad
+            FROM Supplier
+            INNER JOIN Product
+            ON Product.SupplierId = Supplier.Id
+            INNER JOIN OrderDetail
+            ON OrderDetail.ProductId = Product.Id
+            INNER JOIN "Order"
+            ON "Order".Id = OrderDetail.OrderId
+            Where Supplier.Country = "Spain"
+            GROUP BY Fecha, ProductName')
+```
+
+```{r consulta5c, echo=TRUE}
+#Creacion de la grafica usando ggplot
+ggplot(ej5,aes(x=Fecha,y=Cantidad,group=Nombre_Producto, color=Nombre_Producto))+
+  geom_line() +
+  geom_point() + 
+  theme_dark() + 
+  scale_x_discrete(guide = guide_axis(angle = 45))
+```
